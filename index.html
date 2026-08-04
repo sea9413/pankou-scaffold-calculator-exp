@@ -162,6 +162,13 @@
   .total-ton { font-size: 28px; font-weight: 600; margin: 4px 0; font-variant-numeric: tabular-nums; }
   .total-value { font-size: 14px; opacity: 0.85; }
 
+  .footer {
+    text-align: center;
+    font-size: 12px;
+    color: #aaa;
+    padding: 16px 0 8px;
+  }
+
   .empty {
     color: #999;
     text-align: center;
@@ -243,6 +250,11 @@
     <textarea id="remark" style="min-height:60px;" placeholder="比如：某项目 A 区"></textarea>
   </div>
 
+  <!-- 页脚 -->
+  <div class="footer">
+    <span id="footer-ver"></span> &nbsp;|&nbsp; 开发者：sea9413
+  </div>
+
 </div>
 
 <script>
@@ -260,6 +272,7 @@
     document.body.style.marginTop = '44px';
   }
   localStorage.setItem('app_ver', VER);
+  document.getElementById('footer-ver').textContent = VER;
 })();
 
 // ============ 配件对照表（开工令里那张表）============
