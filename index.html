@@ -272,7 +272,8 @@
     document.body.style.marginTop = '44px';
   }
   localStorage.setItem('app_ver', VER);
-  document.getElementById('footer-ver').textContent = VER;
+  var fv = document.getElementById('footer-ver');
+  if (fv) fv.textContent = VER;
 })();
 
 // ============ 配件对照表（开工令里那张表）============
@@ -470,9 +471,9 @@ function parseInput(text) {
           const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
           const bundleQty = isBundle ? qty : undefined;
           if (isBundle) qty = qty * part.bundle;
-          // 无扎/捆/件/吊，但数量能除尽每捆支数，自动反推捆数
-          const autoBundle = !isBundle && part.bundle && qty > 0 && qty % part.bundle === 0
-            ? qty / part.bundle : undefined;
+          // 无扎/捆/件/吊，所有数量都反推捆数，除不尽保留1位小数
+          const autoBundle = !isBundle && part.bundle && qty > 0
+            ? +(qty / part.bundle).toFixed(1) : undefined;
           if (matched[part.code]) {
             matched[part.code].qty += qty;
             if (bundleQty !== undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty || 0) + bundleQty;
