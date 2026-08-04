@@ -470,11 +470,15 @@ function parseInput(text) {
           const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
           const bundleQty = isBundle ? qty : undefined;
           if (isBundle) qty = qty * part.bundle;
+          // 无扎/捆/件/吊，但数量能除尽每捆支数，自动反推捆数
+          const autoBundle = !isBundle && part.bundle && qty > 0 && qty % part.bundle === 0
+            ? qty / part.bundle : undefined;
           if (matched[part.code]) {
             matched[part.code].qty += qty;
             if (bundleQty !== undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty || 0) + bundleQty;
+            else if (autoBundle !== undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty || 0) + autoBundle;
           } else {
-            matched[part.code] = { part, qty, bundleQty };
+            matched[part.code] = { part, qty, bundleQty, autoBundle };
           }
           hit = true;
         }
@@ -562,13 +566,13 @@ function renderResult(matched, unmatched) {
       const tr = document.createElement('tr');
       tr.dataset.code = code;
       const bundle = part.bundle || 1;
-      const hasBundle = bundleQty !== undefined;
+      const hasBundle = bundleQty !== undefined || autoBundle !== undefined;
       const displayQty = hasBundle ? (bundleQty * bundle) : qty;
       const perCol = part.bundle ? bundle : '-';
       tr.innerHTML = `
         <td>${part.type}</td>
         <td>${part.code}</td>
-        <td>${hasBundle ? '<input type="number" class="bundle-qty" min="0" step="1" value="' + bundleQty + '">' : '-'}</td>
+        <td>${hasBundle ? '<input type="number" class="bundle-qty" min="0" step="1" value="' + (bundleQty !== undefined ? bundleQty : autoBundle) + '">' : '-'}</td>
         <td>${perCol}</td>
         <td>${hasBundle
           ? '<span class="calc-qty">' + displayQty + '支</span>'
@@ -616,11 +620,11 @@ function onBundleChange(e) {
   const tr = e.target.closest('tr');
   const code = tr.dataset.code;
   const part = PARTS.find(p => p.code === code);
-  let bundleQty = parseFloat(e.target.value);
-  if (isNaN(bundleQty) || bundleQty < 0) bundleQty = 0;
-  const bundle = part.bundle || 1;
-  const totalQty = bundleQty * bundle;
-  tr.querySelector('.calc-qty').textContent = totalQty + '支';
+  let bQty = parseFloat(e.target.value);
+  if (isNaN(bQty) || bQty < 0) bQty = 0;
+  const totalQty = bQty * (part.bundle || 1);
+  const calcQty = tr.querySelector('.calc-qty');
+  if (calcQty) calcQty.textContent = totalQty + '支';
   tr.querySelector('.subtotal').textContent = fmt(totalQty * part.weight / 1000);
   updateTotal();
 }
