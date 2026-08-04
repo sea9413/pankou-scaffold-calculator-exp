@@ -565,12 +565,12 @@ function renderResult(matched, unmatched) {
     tbody.innerHTML = '<tr><td colspan="6" class="empty">没有识别到配件</td></tr>';
   } else {
     for (const code of codes) {
-      const { part, qty, bundleQty } = matched[code];
+      const { part, qty, bundleQty, autoBundle } = matched[code];
       const tr = document.createElement('tr');
       tr.dataset.code = code;
       const bundle = part.bundle || 1;
       const hasBundle = bundleQty !== undefined || autoBundle !== undefined;
-      const displayQty = hasBundle ? (bundleQty * bundle) : qty;
+      const displayQty = bundleQty !== undefined ? (bundleQty * bundle) : qty;
       const perCol = part.bundle ? bundle : '-';
       tr.innerHTML = `
         <td>${part.type}</td>
