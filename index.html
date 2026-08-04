@@ -259,22 +259,24 @@
 
 <script>
 // ============ 版本检查（自动检测更新）============
-(function(){
+document.addEventListener('DOMContentLoaded', function(){
   var VER = '2026-08-04-exp';  // 试验版
-  var lastVer = localStorage.getItem('app_ver');
-  if (lastVer && lastVer !== VER) {
-    var bar = document.createElement('div');
-    bar.style.cssText = 'background:#fbbf24;color:#111;padding:10px 16px;font-size:14px;text-align:center;position:fixed;top:0;left:0;right:0;z-index:9999;';
-    bar.innerHTML = '📢 检测到新版本已上线！请刷新页面获取最新版（点此刷新）';
-    bar.style.cursor = 'pointer';
-    bar.onclick = function(){ location.reload(); };
-    document.body.prepend(bar);
-    document.body.style.marginTop = '44px';
-  }
-  localStorage.setItem('app_ver', VER);
+  try {
+    var lastVer = localStorage.getItem('app_ver');
+    if (lastVer && lastVer !== VER) {
+      var bar = document.createElement('div');
+      bar.style.cssText = 'background:#fbbf24;color:#111;padding:10px 16px;font-size:14px;text-align:center;position:fixed;top:0;left:0;right:0;z-index:9999;';
+      bar.innerHTML = '📢 检测到新版本已上线！请刷新页面获取最新版（点此刷新）';
+      bar.style.cursor = 'pointer';
+      bar.onclick = function(){ location.reload(); };
+      document.body.prepend(bar);
+      document.body.style.marginTop = '44px';
+    }
+    localStorage.setItem('app_ver', VER);
+  } catch(e) { /* localStorage 不可用时静默跳过 */ }
   var fv = document.getElementById('footer-ver');
   if (fv) fv.textContent = VER;
-})();
+});
 
 // ============ 配件对照表（开工令里那张表）============
 const PARTS = [
