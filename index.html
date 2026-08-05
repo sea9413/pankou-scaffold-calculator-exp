@@ -266,7 +266,7 @@
 <script>
 // ============ 版本检查（自动检测更新）============
 document.addEventListener('DOMContentLoaded', function(){
-  var VER = '2026-08-05-exp';  // 试验版
+  var VER = '2026-08-05-v6';  // 试验版
   try {
     var lastVer = localStorage.getItem('app_ver');
     if (lastVer && lastVer !== VER) {
@@ -359,11 +359,14 @@ function parseInput(text) {
           const isBundle = /^(扎|捆|件|吊)$/.test(unit) && part.bundle;
           const bundleQty = isBundle ? qty : undefined;
           if (isBundle) qty = qty*part.bundle;
+          // autoBundle: 非扎捆单位时，反推捆数
+          const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
           if (matched[part.code]) {
             matched[part.code].qty += qty;
             if (bundleQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bundleQty;
+            else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
           } else {
-            matched[part.code] = { part, qty, bundleQty };
+            matched[part.code] = { part, qty, bundleQty, autoBundle };
           }
           hit = true;
         }
@@ -430,11 +433,14 @@ function parseInput(text) {
             const isB = /(扎|捆|件|吊)/.test(line)&&part.bundle;
             const bQty = isB ? qty : undefined;
             if (isB) qty = qty*part.bundle;
+            // autoBundle: 非扎捆单位时，反推捆数
+            const autoBundle = !isB && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
             if (matched[part.code]) {
               matched[part.code].qty += qty;
               if (bQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bQty;
+              else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
             } else {
-              matched[part.code] = { part, qty, bundleQty: bQty };
+              matched[part.code] = { part, qty, bundleQty: bQty, autoBundle };
             }
             hit = true;
           }
@@ -471,11 +477,14 @@ function parseInput(text) {
         const isBundle = /(扎|捆|件|吊)/.test(line)&&part.bundle;
         const bundleQty = isBundle ? qty : undefined;
         if (isBundle) qty = qty*part.bundle;
+        // autoBundle: 非扎捆单位时，反推捆数
+        const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
         if (matched[part.code]) {
           matched[part.code].qty += qty;
           if (bundleQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bundleQty;
+          else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
         } else {
-          matched[part.code] = { part, qty, bundleQty };
+          matched[part.code] = { part, qty, bundleQty, autoBundle };
         }
         hit = true;
       }
@@ -501,9 +510,17 @@ function parseInput(text) {
         }
         if (qty===0&&allNums.length>=2) qty=parseFloat(allNums[allNums.length-1]);
         const isBundle = /(扎|捆|件|吊)/.test(line)&&part.bundle;
+        const bundleQty = isBundle ? qty : undefined;
         if (isBundle) qty=qty*part.bundle;
-        if (matched[part.code]) matched[part.code].qty+=qty;
-        else matched[part.code]={part,qty};
+        // autoBundle: 非扎捆单位时，反推捆数
+        const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
+        if (matched[part.code]) {
+          matched[part.code].qty+=qty;
+          if (bundleQty!==undefined) matched[part.code].bundleQty=(matched[part.code].bundleQty||0)+bundleQty;
+          else if (autoBundle!==undefined) matched[part.code].bundleQty=(matched[part.code].bundleQty||0)+autoBundle;
+        } else {
+          matched[part.code]={part,qty,bundleQty,autoBundle};
+        }
         hit=true;
       }
     }
@@ -525,11 +542,14 @@ function parseInput(text) {
         const isBundle = /^(扎|捆|件|吊)$/.test(unit)&&part.bundle;
         const bundleQty = isBundle ? qty : undefined;
         if (isBundle) qty=qty*part.bundle;
+        // autoBundle: 非扎捆单位时，反推捆数
+        const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
         if (matched[part.code]) {
           matched[part.code].qty+=qty;
           if (bundleQty!==undefined) matched[part.code].bundleQty=(matched[part.code].bundleQty||0)+bundleQty;
+          else if (autoBundle!==undefined) matched[part.code].bundleQty=(matched[part.code].bundleQty||0)+autoBundle;
         } else {
-          matched[part.code]={part,qty,bundleQty};
+          matched[part.code]={part,qty,bundleQty,autoBundle};
         }
         hit=true;
       }
