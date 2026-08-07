@@ -398,7 +398,7 @@
 <script>
 // ============ 版本检查（自动检测更新）============
 document.addEventListener('DOMContentLoaded', function(){
-  var VER = '2026-08-07-optimized-v2';
+  var VER = '2026-08-08-exp';
   try {
     var lastVer = localStorage.getItem('app_ver');
     if (lastVer && lastVer !== VER) {
@@ -894,213 +894,63 @@ function parseInputPANKOU(text) {
 
 // ============ 解析逻辑：套扣 ============
 function parseInputTAOKOU(text) {
-  const lines = text.split(/[\n\r]+/).map(l => l.trim()).filter(l => l);
-  const matched = {};   // code -> { part, qty }
+  const lines = text.split(/[\n\r\/|，、,]+/).map(l => l.trim()).filter(l => l);
+  const matched = {};
   const unmatched = [];
 
   for (const line of lines) {
     let hit = false;
 
-    // 立杆 / 横杆 / 顶托：米数可选（「横杆0.6」或「横杆0.55米」都能识别）
-    const typeMatch = line.match(/(立杆|横杆|斜拉杆|顶托|上托|螺丝头|拉杆|LG|HG|L|H)/i);
-    if (typeMatch) {
-      const rawType = typeMatch[1];
+    // === 格式1：2.5米立杆4000条 / 2.5立杆4000条 / 0.7米立杆5扎（米数+类型+数量）===
+    const unitTypeQty = line.match(/^(\d+(?:\.\d+)?)\s*(?:米|m|M)?\s*(立杆|横杆|顶托|上托|螺丝头|LG|HG|L|H)\s*(\d+(?:\.\d+)?)?\s*(条|根|支|个|套|扎|捆|件|吊)?/i);
+    if (unitTypeQty) {
+      const sizeNum = unitTypeQty[1];
+      const rawType = unitTypeQty[2];
+      let qty = unitTypeQty[3] ? parseFloat(unitTypeQty[3]) : 0;
+      const unit = unitTypeQty[4] || '';
       let typeName;
       const upper = rawType.toUpperCase();
-      if (upper === 'L') typeName = '立杆';
-      else if (upper === 'H') typeName = '横杆';
-      else if (upper === 'LG') typeName = '立杆';
-      else if (upper === 'HG') typeName = '横杆';
-      else if (rawType === '顶托' || rawType === '上托' || rawType === '螺丝头') typeName = '顶托';
-      else if (rawType === '拉杆') typeName = '横杆';
-      else typeName = rawType;
-      // 提取米数：数字 + 可选的(米|m|M)
-      const meterMatch = line.match(/(\d+(?:\.\d+)?)\s*(?:米|m|M)?/);
-      // 提取数量：优先匹配单位后面的数字
-      const unitQtyMatch = line.match(/(\d+(?:\.\d+)?)\s*(支|根|套|捆|扎|件|吊)/);
-      // 提取所有数字
-      const numMatch = line.match(/(\d+(?:\.\d+)?)/g);
-      if (meterMatch && numMatch && numMatch.length >= 1) {
-        const meter = meterMatch[1];
-        // 数量优先：单位后面的数字 > 不等于 meter 的数字 > 0
-        let qty = null;
-        if (unitQtyMatch) {
-          qty = parseFloat(unitQtyMatch[1]);
-        } else {
-          for (const n of numMatch) {
-            if (parseFloat(n) !== parseFloat(meter)) { qty = parseFloat(n); break; }
-          }
-        }
-        if (qty === null) qty = 0;
+      if (upper==='LG'||upper==='L'||rawType==='立杆') typeName='立杆';
+      else if (upper==='HG'||upper==='H'||rawType==='横杆') typeName='横杆';
+      else if (rawType==='顶托'||rawType==='上托'||rawType==='螺丝头') typeName='顶托';
+      else typeName=rawType;
 
-        const candidates = getPARTS().filter(p => p.type === typeName && p.matcher && p.matcher.includes(meter));
-        // 精确匹配失败 → 尝试模糊：补小数点
-        let fuzzyMatch = null;
-        if (candidates.length === 0) {
-          const fuzzy = fuzzyInsertDotTAOKOU(meter, typeName);
-          if (fuzzy) {
-            fuzzyMatch = getPARTS().filter(p => p.type === typeName && p.matcher && p.matcher.includes(fuzzy));
-          }
-        }
-        const finalCandidates = candidates.length > 0 ? candidates : (fuzzyMatch || []);
-        // 顶托无 matcher → 直接接
-        if (finalCandidates.length === 0 && typeName === '顶托') {
-          const part = getPARTS().find(p => p.type === '顶托');
-          if (part) {
-            // 顶托无 meter 概念，数量 = 所有数字之和（如果只有一个数字，就是 qty）
-            const totalQty = numMatch.reduce((s, n) => s + parseFloat(n), 0);
-            qty = totalQty;
-            const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
-            const bundleQty = isBundle ? qty : undefined;
-            if (isBundle) qty = qty * part.bundle;
-            // autoBundle: 非扎捆单位时，反推捆数
-            const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
-            if (matched[part.code]) {
-              matched[part.code].qty += qty;
-              if (bundleQty !==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty || 0) + bundleQty;
-              else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty || 0) + autoBundle;
-            } else {
-              matched[part.code] = { part, qty, bundleQty, autoBundle };
-            }
-            hit = true;
-            continue;
-          }
-        }
-        if (finalCandidates.length === 1) {
-          const part = finalCandidates[0];
-          const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
-          const bundleQty = isBundle ? qty : undefined;
-          if (isBundle) qty = qty * part.bundle;
-          if (matched[part.code]) {
-            matched[part.code].qty += qty;
-            if (bundleQty !== undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty || 0) + bundleQty;
-          } else {
-            matched[part.code] = { part, qty, bundleQty };
-          }
-          hit = true;
-        } else if (finalCandidates.length > 1) {
-          const part = finalCandidates[0];
-          const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
-          const bundleQty = isBundle ? qty : undefined;
-          if (isBundle) qty = qty * part.bundle;
-          if (matched[part.code]) {
-            matched[part.code].qty += qty;
-            if (bundleQty !== undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty || 0) + bundleQty;
-          } else {
-            matched[part.code] = { part, qty, bundleQty };
-          }
-          hit = true;
-        } else {
-          unmatched.push(line);
-          hit = true;
-        }
-      }
-    }
-
-    if (hit) continue;
-
-    // 2.5立杆 / 2.5LG / 0.9横杆 / 1.71斜拉杆（数字在前，类型在后）
-    const numFirstMatch = line.match(/(\d+(?:\.\d+)?)\s*(立杆|横杆|顶托|上托|螺丝头|LG|HG)/i);
-    if (numFirstMatch) {
-      const num = numFirstMatch[1];
-      const rawType = numFirstMatch[2];
-      let typeName;
-      if (rawType === '横杆') typeName = '横杆';
-      else if (rawType === '顶托' || rawType === '上托' || rawType === '螺丝头') typeName = '顶托';
-      else if (rawType === 'LG' || rawType === '立杆') typeName = '立杆';
-      else if (rawType === 'HG') typeName = '横杆';
-      else typeName = rawType;
-      const candidates = getPARTS().filter(p => p.type === typeName && p.matcher && p.matcher.includes(num));
-      if (candidates.length >= 1) {
-        const part = candidates[0];
-        const otherNums = line.match(/(\d+(?:\.\d+)?)/g).filter(n => n !== num);
-        let qty = otherNums.length > 0 ? parseFloat(otherNums[0]) : 0;
-        if (/(扎|捆|件|吊)/.test(line) && part.bundle) qty = qty * part.bundle;
-        if (matched[part.code]) matched[part.code].qty += qty;
-        else matched[part.code] = { part, qty };
-        hit = true;
-      }
-    }
-
-    if (hit) continue;
-
-    // L2.5 / H0.9 / X1.71 前缀写法（单个大写字母开头）
-    const prefixMatch = line.match(/\b([LHX])\s*(\d+(?:\.\d+)?)\b/i);
-    if (prefixMatch) {
-      const prefix = prefixMatch[1].toUpperCase();
-      const meter = prefixMatch[2];
-      let typeName, code;
-      if (prefix === 'L') { typeName = '立杆'; code = 'LG' + meter; }
-      else if (prefix === 'H') { typeName = '横杆'; code = 'HG' + meter; }
-      else if (prefix === 'X') { typeName = '斜拉杆'; code = 'XLG' + meter; }
-      const part = getPARTS().find(p => p.code === code);
-      if (part) {
-        // 数量：找 meter 以外的数字
-        const allNums = line.match(/(\d+(?:\.\d+)?)/g) || [];
-        let qty = 0;
-        for (const n of allNums) {
-          if (parseFloat(n) !== parseFloat(meter)) { qty = parseFloat(n); break; }
-        }
-        if (qty === 0 && allNums.length >= 2) { qty = parseFloat(allNums[allNums.length - 1]); }
-        if (matched[part.code]) matched[part.code].qty += qty;
-        else matched[part.code] = { part, qty };
-        hit = true;
-      }
-    }
-
-    if (hit) continue;
-
-    // LG1.0 / HG0.6 直接写法（不带中文品类名）
-    const shortCodeMatch = line.match(/\b(LG\d+\.?\d*|HG\d+\.?\d*)\b/i);
-    if (shortCodeMatch) {
-      const code = shortCodeMatch[1].toUpperCase();
-      const part = getPARTS().find(p => p.code === code);
-      if (part) {
-        const numMatch = line.match(/(\d+(?:\.\d+)?)/g);
-        let qty = 0;
-        if (numMatch) {
-          for (const n of numMatch) {
-            if (n !== code.replace(/[A-Z]/g, '')) { qty = parseFloat(n); break; }
-          }
-        }
-        if (qty === 0) {
-          const allNums = line.match(/(\d+(?:\.\d+)?)/g);
-          if (allNums) { for (const n of allNums) { if (n !== '1') { qty = parseFloat(n); break; } } }
-        }
-        if (/(扎|捆|件|吊)/.test(line) && part.bundle) qty = qty * part.bundle;
-        if (matched[part.code]) matched[part.code].qty += qty;
-        else matched[part.code] = { part, qty };
-        hit = true;
-      }
-    }
-
-    if (hit) continue;
-
-    // 纯数字兜底：只写了数字没有类型关键字，按唯一性归类
-    // 格式：2.5 1000 / 2.5 10扎 / 0.9 200 / 1.71 50根 等
-    const pureNums = line.match(/(\d+(?:\.\d+)?)/g);
-    if (pureNums && pureNums.length >= 1) {
-      const num = pureNums[0];
-      const supportedTypes = [];
-      ['立杆','横杆'].forEach(t => {
-        if (fuzzyInsertDotTAOKOU(num, t)) supportedTypes.push(t);
-      });
-      if (supportedTypes.length === 1) {
-        const typeName = supportedTypes[0];
-        const fuzzyNum = fuzzyInsertDotTAOKOU(num, typeName);
-        const part = getPARTS().find(p => p.type === typeName && p.matcher && p.matcher.includes(fuzzyNum));
+      // 顶托：没有米数，直接取数量
+      if (typeName==='顶托') {
+        const part = getPARTS().find(p=>p.type===typeName);
         if (part) {
-          let qty = pureNums.length >= 2 ? parseFloat(pureNums[1]) : 0;
-          const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
+          const isBundle = /^(扎|捆|件|吊)$/.test(unit) && part.bundle;
           const bundleQty = isBundle ? qty : undefined;
-          if (isBundle) qty = qty * part.bundle;
-          // 无扎/捆/件/吊，所有数量都反推捆数，除不尽保留1位小数
-          const autoBundle = !isBundle && part.bundle && qty > 0
-            ? +(qty / part.bundle).toFixed(1) : undefined;
+          const realQty = isBundle ? qty*part.bundle : qty;
+          const autoBundle = !isBundle && part.bundle && realQty > 0 ? +(realQty / part.bundle).toFixed(1) : undefined;
+          if (matched[part.code]) {
+            matched[part.code].qty += realQty;
+            if (bundleQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bundleQty;
+            else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
+          } else {
+            matched[part.code] = { part, qty: realQty, bundleQty, autoBundle };
+          }
+          hit = true;
+        }
+      } else {
+        // 有米数的立杆/横杆
+        const candidates = getPARTS().filter(p=>p.type===typeName&&p.matcher&&p.matcher.includes(sizeNum));
+        let fuzzyMatch = null;
+        if (candidates.length===0) {
+          const fuzzy = fuzzyInsertDotTAOKOU(sizeNum, typeName);
+          if (fuzzy) fuzzyMatch = getPARTS().filter(p=>p.type===typeName&&p.matcher&&p.matcher.includes(fuzzy));
+        }
+        const final = candidates.length>0 ? candidates : (fuzzyMatch||[]);
+        if (final.length>=1) {
+          const part = final[0];
+          const isBundle = /^(扎|捆|件|吊)$/.test(unit) && part.bundle;
+          const bundleQty = isBundle ? qty : undefined;
+          if (isBundle) qty = qty*part.bundle;
+          const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
           if (matched[part.code]) {
             matched[part.code].qty += qty;
-            if (bundleQty !== undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty || 0) + bundleQty;
-            else if (autoBundle !== undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty || 0) + autoBundle;
+            if (bundleQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bundleQty;
+            else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
           } else {
             matched[part.code] = { part, qty, bundleQty, autoBundle };
           }
@@ -1108,49 +958,241 @@ function parseInputTAOKOU(text) {
         }
       }
     }
-
     if (hit) continue;
 
-    // 顶托 / 底座 / 下托 / 架子 / 槽钢架子
-    if (/顶托|螺丝头/.test(line)) {
-      const numMatch = line.match(/(\d+(?:\.\d+)?)/);
-      if (numMatch) {
-        const part = getPARTS().find(p => p.type === '顶托');
-        let qty = parseFloat(numMatch[1]);
-        if (/(扎|捆|件|吊)/.test(line) && part.bundle) qty = qty * part.bundle;
-        if (matched[part.code]) matched[part.code].qty += qty;
-        else matched[part.code] = { part, qty };
+    // === 格式2：立杆2.5 4000条 / 横杆1.05 2000根 / 上托1600个（类型+米数+数量）===
+    const typeMatch = line.match(/(立杆|横杆|顶托|上托|螺丝头|拉杆|LG|HG|L|H)/i);
+    if (typeMatch) {
+      const rawType = typeMatch[1];
+      let typeName;
+      const upper = rawType.toUpperCase();
+      if (upper==='L'||upper==='LG'||rawType==='立杆') typeName='立杆';
+      else if (upper==='H'||upper==='HG'||rawType==='拉杆'||rawType==='横杆') typeName='横杆';
+      else if (rawType==='顶托'||rawType==='上托'||rawType==='螺丝头') typeName='顶托';
+      else typeName=rawType;
+
+      // 顶托：直接取数量
+      if (typeName==='顶托') {
+        const numAll = line.match(/(\d+(?:\.\d+)?)/g)||[];
+        const part = getPARTS().find(p=>p.type===typeName);
+        if (part && numAll.length>=1) {
+          let qty = parseFloat(numAll[numAll.length-1]);
+          const unitM = line.match(/(\d+(?:\.\d+)?)\s*(扎|捆|件|吊)/);
+          const isBundle = unitM && part.bundle;
+          const bundleQty = isBundle ? parseFloat(unitM[1]) : undefined;
+          if (isBundle) qty = qty * part.bundle;
+          const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
+          if (matched[part.code]) {
+            matched[part.code].qty += qty;
+            if (bundleQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bundleQty;
+            else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
+          } else {
+            matched[part.code] = { part, qty, bundleQty, autoBundle };
+          }
+          hit = true;
+        }
+      } else {
+        // 有米数的立杆/横杆
+        const meterMatch = line.match(/(\d+(?:\.\d+)?)/);
+        const numMatch = line.match(/(\d+(?:\.\d+)?)/g);
+        const unitQtyMatch = line.match(/(\d+(?:\.\d+)?)\s*(支|根|套|捆|扎|件|吊)/);
+        if (meterMatch && numMatch) {
+          const meter = meterMatch[1];
+          let qty = null;
+          if (unitQtyMatch) qty = parseFloat(unitQtyMatch[1]);
+          else {
+            for (const n of numMatch) {
+              if (parseFloat(n) !== parseFloat(meter)) { qty = parseFloat(n); break; }
+            }
+          }
+          if (qty === null) qty = 0;
+
+          const candidates = getPARTS().filter(p=>p.type===typeName&&p.matcher&&p.matcher.includes(meter));
+          let fuzzyMatch = null;
+          if (candidates.length===0) {
+            const fuzzy = fuzzyInsertDotTAOKOU(meter, typeName);
+            if (fuzzy) fuzzyMatch = getPARTS().filter(p=>p.type===typeName&&p.matcher&&p.matcher.includes(fuzzy));
+          }
+          const final = candidates.length>0 ? candidates : (fuzzyMatch||[]);
+          if (final.length>=1) {
+            const part = final[0];
+            const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
+            const bundleQty = isBundle ? qty : undefined;
+            if (isBundle) qty = qty*part.bundle;
+            const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
+            if (matched[part.code]) {
+              matched[part.code].qty += qty;
+              if (bundleQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bundleQty;
+              else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
+            } else {
+              matched[part.code] = { part, qty, bundleQty, autoBundle };
+            }
+            hit = true;
+          }
+        }
+      }
+    }
+    if (hit) continue;
+
+    // === 格式3：2.5立杆 / 0.7立杆 / 1.05横杆（数字在前类型在后）===
+    const numFirstMatch = line.match(/(\d+(?:\.\d+)?)\s*(立杆|横杆|顶托|上托|LG|HG)/i);
+    if (numFirstMatch) {
+      const num = numFirstMatch[1];
+      const rawType = numFirstMatch[2];
+      let typeName;
+      if (rawType==='横杆'||rawType==='HG') typeName='横杆';
+      else if (rawType==='顶托'||rawType==='上托') typeName='顶托';
+      else if (rawType==='立杆'||rawType==='LG') typeName='立杆';
+      else typeName=rawType;
+
+      const candidates = getPARTS().filter(p=>p.type===typeName&&p.matcher&&p.matcher.includes(num));
+      let fuzzyMatch = null;
+      if (candidates.length===0) {
+        const fuzzy = fuzzyInsertDotTAOKOU(num, typeName);
+        if (fuzzy) fuzzyMatch = getPARTS().filter(p=>p.type===typeName&&p.matcher&&p.matcher.includes(fuzzy));
+      }
+      const final = candidates.length>0 ? candidates : (fuzzyMatch||[]);
+      if (final.length>=1) {
+        const part = final[0];
+        const otherNums = line.match(/(\d+(?:\.\d+)?)/g).filter(n=>n!==num);
+        let qty = otherNums.length>0 ? parseFloat(otherNums[0]) : 0;
+        const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
+        const bundleQty = isBundle ? qty : undefined;
+        if (isBundle) qty = qty * part.bundle;
+        const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
+        if (matched[part.code]) {
+          matched[part.code].qty += qty;
+          if (bundleQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bundleQty;
+          else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
+        } else {
+          matched[part.code] = { part, qty, bundleQty, autoBundle };
+        }
         hit = true;
       }
-    } else if (/底座|下托/.test(line)) {
-      const numMatch = line.match(/(\d+(?:\.\d+)?)/);
-      if (numMatch) {
-        const part = getPARTS().find(p => p.type === '底座');
-        let qty = parseFloat(numMatch[1]);
-        if (/(扎|捆|件|吊)/.test(line) && part.bundle) qty = qty * part.bundle;
-        if (matched[part.code]) matched[part.code].qty += qty;
-        else matched[part.code] = { part, qty };
+    }
+    if (hit) continue;
+
+    // === 格式4：L2.5 / H1.05 / L0.7 前缀写法（单字母+数字）===
+    const prefixMatch = line.match(/\b([LH])\s*(\d+(?:\.\d+)?)\b/i);
+    if (prefixMatch) {
+      const prefix = prefixMatch[1].toUpperCase();
+      const meter = prefixMatch[2];
+      const typeName = prefix==='L' ? '立杆' : '横杆';
+      const fuzzy = fuzzyInsertDotTAOKOU(meter, typeName);
+      const candidates = getPARTS().filter(p=>p.type===typeName&&p.matcher&&(fuzzy&&p.matcher.includes(fuzzy)||p.matcher.includes(meter)));
+      if (candidates.length>=1) {
+        const part = candidates[0];
+        const allNums = line.match(/(\d+(?:\.\d+)?)/g) || [];
+        let qty = 0;
+        for (const n of allNums) {
+          if (parseFloat(n) !== parseFloat(meter)) { qty = parseFloat(n); break; }
+        }
+        const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
+        const bundleQty = isBundle ? qty : undefined;
+        if (isBundle) qty = qty * part.bundle;
+        const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
+        if (matched[part.code]) {
+          matched[part.code].qty += qty;
+          if (bundleQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bundleQty;
+          else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
+        } else {
+          matched[part.code] = { part, qty, bundleQty, autoBundle };
+        }
         hit = true;
       }
-    } else if (/架子|槽钢架子/.test(line)) {
-      const numMatch = line.match(/(\d+(?:\.\d+)?)/);
-      if (numMatch) {
-        const part = getPARTS().find(p => p.type === '架子');
-        let qty = parseFloat(numMatch[1]);
-        if (/(扎|捆|件|吊)/.test(line) && part.bundle) qty = qty * part.bundle;
-        if (matched[part.code]) matched[part.code].qty += qty;
-        else matched[part.code] = { part, qty };
+    }
+    if (hit) continue;
+
+    // === 格式5：LG2.5 / HG1.05 直接写法（型号前缀+数字）===
+    const shortCodeMatch = line.match(/\b(LG\d+\.?\d*|HG\d+\.?\d*)\b/i);
+    if (shortCodeMatch) {
+      const codeRaw = shortCodeMatch[1].toUpperCase();
+      const letter = codeRaw.match(/^([A-Z]+)/)[1];
+      const numPart = codeRaw.substring(letter.length);
+      const typeName = letter==='LG' ? '立杆' : '横杆';
+      const candidates = getPARTS().filter(p=>p.type===typeName&&p.matcher&&p.matcher.some(m=>m.includes(numPart)));
+      if (candidates.length>=1) {
+        const part = candidates[0];
+        const allNums = line.match(/(\d+(?:\.\d+)?)/g) || [];
+        let qty = 0;
+        for (const n of allNums) {
+          if (!n.startsWith(numPart.replace('.',''))) { qty = parseFloat(n); break; }
+        }
+        const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
+        const bundleQty = isBundle ? qty : undefined;
+        if (isBundle) qty = qty * part.bundle;
+        const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
+        if (matched[part.code]) {
+          matched[part.code].qty += qty;
+          if (bundleQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bundleQty;
+          else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
+        } else {
+          matched[part.code] = { part, qty, bundleQty, autoBundle };
+        }
         hit = true;
+      }
+    }
+    if (hit) continue;
+
+    // === 格式6：纯数字兜底（2.5 1000 / 0.7 500 / 1.05 2000）===
+    const pureNums = line.match(/(\d+(?:\.\d+)?)/g);
+    if (pureNums && pureNums.length>=1) {
+      const num = pureNums[0];
+      let resolvedPart = null;
+      for (const t of ['立杆','横杆']) {
+        const f = fuzzyInsertDotTAOKOU(num, t);
+        if (f) {
+          const p = getPARTS().find(p2=>p2.type===t&&p2.matcher&&p2.matcher.includes(f));
+          if (p) { resolvedPart = p; break; }
+        }
+      }
+      if (resolvedPart) {
+        const part = resolvedPart;
+        let qty = pureNums.length>=2 ? parseFloat(pureNums[1]) : 0;
+        const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
+        const bundleQty = isBundle ? qty : undefined;
+        if (isBundle) qty = qty * part.bundle;
+        const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
+        if (matched[part.code]) {
+          matched[part.code].qty += qty;
+          if (bundleQty!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+bundleQty;
+          else if (autoBundle!==undefined) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
+        } else {
+          matched[part.code] = { part, qty, bundleQty, autoBundle };
+        }
+        hit = true;
+      }
+    }
+    if (hit) continue;
+
+    // === 格式7：顶托/上托 单独出现（无型号概念）===
+    if (!hit && /(顶托|上托|螺丝头)/.test(line)) {
+      const m = line.match(/(\d+(?:\.\d+)?)/);
+      if (m) {
+        const part = getPARTS().find(p=>p.type==='顶托');
+        if (part) {
+          let qty = parseFloat(m[1]);
+          const isBundle = /(扎|捆|件|吊)/.test(line) && part.bundle;
+          if (isBundle) qty = qty * part.bundle;
+          const autoBundle = !isBundle && part.bundle && qty > 0 ? +(qty / part.bundle).toFixed(1) : undefined;
+          if (matched[part.code]) {
+            matched[part.code].qty += qty;
+            if (autoBundle) matched[part.code].bundleQty = (matched[part.code].bundleQty||0)+autoBundle;
+          } else {
+            matched[part.code] = { part, qty, autoBundle };
+          }
+          hit = true;
+        }
       }
     }
 
-    if (!hit) {
-      unmatched.push(line);
-    }
+    if (!hit) unmatched.push(line);
   }
 
   return { matched, unmatched };
 }
+
+
 
 // ============ 渲染 ============
 function fmt(n) {
